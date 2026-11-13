@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+release*/
+work/
+test-results/
+*.log
+*.sqlite*
+*.db
+.env*
+!.env.example
+backups/
+invoices/
+exports/
