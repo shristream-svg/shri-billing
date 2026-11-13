@@ -1,0 +1,34 @@
+import { useEffect,useState } from 'react';
+import { LayoutDashboard,FilePlus2,Files,Users,Layers3,Wallet,ChartNoAxesCombined,Settings2,DatabaseBackup,Search,Check,AlertCircle,ChevronRight,Receipt,CalendarCheck2,CalendarDays,PanelLeft } from 'lucide-react';
+import { api,Button,errorText,type Notify } from './common';
+import { type Invoice,type Settings } from '../shared/model';
+import { BillBook } from './BillBook';
+import { Masters,SettingsPage,BackupPage } from './Masters';
+import { BillEditor } from './BillEditor';
+import { InvoiceDetail,Reports,Outstanding } from './Records';
+import { Dashboard } from './Dashboard';
+import { DailyLog } from './DailyLog';
+import { Attendance } from './ShopAttendance';
+const navigation=[['Dashboard',LayoutDashboard],['New Bill',FilePlus2],['Daily Log',CalendarDays],['Bill Book',Files],['Customers',Users],['Services',Layers3],['Payments',Wallet],['Reports',ChartNoAxesCombined],['Attendance',CalendarCheck2],['Settings',Settings2],['Backup & Restore',DatabaseBackup]] as const;
+export default function App(){const [collapsed,setCollapsed]=useState(false);const [page,setPage]=useState('Dashboard'),[settings,setSettings]=useState<Settings>(),[error,setError]=useState(''),[toast,setToast]=useState<{text:string;error:boolean}>(),[selected,setSelected]=useState<Invoice>(),[editing,setEditing]=useState<Invoice>(),[duplicate,setDuplicate]=useState(false),[revision,setRevision]=useState(0),[query,setQuery]=useState(''),[search,setSearch]=useState(''),[draftKey,setDraftKey]=useState(0);
+ const notify:Notify=(text,error=false)=>{setToast({text,error});};useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(undefined),6500);return()=>clearTimeout(t);}},[toast]);
+ const boot=()=>{if(!api){setError('Please open SHRI BILLING as a desktop application.');return;}api.bootstrap().then(b=>setSettings(b.settings)).catch(e=>setError(errorText(e)));};useEffect(boot,[]);
+ const navigate=(name:string)=>{if(window.shriBillDirty&&!window.confirm('Discard the unsaved bill changes? Save the bill first if you want to keep them.'))return;window.shriBillDirty=false;setPage(name);if(name==='New Bill'){setEditing(undefined);setDuplicate(false);setDraftKey(v=>v+1);}};
+ useEffect(()=>{const fn=(e:KeyboardEvent)=>{if(e.ctrlKey&&e.key.toLowerCase()==='n'){e.preventDefault();navigate('New Bill');}};window.addEventListener('keydown',fn);return()=>window.removeEventListener('keydown',fn);},[]);
+ const changed=()=>{setRevision(v=>v+1);boot();};const open=(i:Invoice)=>setSelected(i);const newBill=()=>navigate('New Bill');
+ if(error)return <div className="startup"><AlertCircle/><h1>SHRI BILLING</h1><p>{error}</p><Button onClick={()=>{setError('');boot();}}>Retry</Button></div>;if(!settings)return <div className="startup"><div className="brand-mark">S</div><h1>Opening your counter…</h1></div>;
+ return <div className={`app-shell ${collapsed?'sidebar-collapsed':''}`}><aside className="sidebar"><div className="brand"><div className="site-brand-mark"><span className="original-monogram">SC</span></div><div><strong>Shri Cyber Cafe</strong><small>Printing · Photocopy · Internet</small></div></div><nav>{[{heading:'Sales',labels:['Dashboard','New Bill','Daily Log','Bill Book']},{heading:'Manage',labels:['Customers','Services','Payments','Attendance']},{heading:'Insights & settings',labels:['Reports','Settings','Backup & Restore']}].map(group=><section className="nav-group" key={group.heading}><div className="workspace-label">{group.heading}</div>{group.labels.map(label=>{const Icon=navigation.find(([name])=>name===label)![1];return <button key={label} title={label} aria-label={label} className={page===label?'active':''} onClick={()=>navigate(label)}><Icon size={18}/><span>{label==='Services'?'Items & Services':label==='Payments'?'Receivables':label}</span>{page===label&&<span className="active-dot"/>}</button>;})}</section>)}</nav><div className="sidebar-bottom"><div className="gst-chip"><small>GSTIN</small><b>{settings.gstin}</b></div><div className="shop-user"><div>SC</div><section><b>SHRI CYBER CAFE</b><small>Patel Nagar · Bahadurgarh</small></section></div></div></aside><div className="workspace"><header className="topbar"><button className="icon-button sidebar-toggle" aria-label="Toggle sidebar" aria-expanded={!collapsed} onClick={()=>setCollapsed(!collapsed)}><PanelLeft size={19}/></button><div className="breadcrumb"><b>{page}</b><small>{page==='New Bill'?'Sales · Point of sale':'Shri Cyber Cafe · Business desk'}</small></div><form className="global-search" onSubmit={e=>{e.preventDefault();if(window.shriBillDirty&&!window.confirm('Discard the unsaved bill changes and search invoices?'))return;window.shriBillDirty=false;setSearch(query);setPage('Bill Book');}}><Search size={16}/><input aria-label="Global search" placeholder="Search bills, customers, mobile…" value={query} onChange={e=>setQuery(e.target.value)}/><kbd>Enter</kbd></form><Button kind="primary top-new-bill" onClick={newBill}>+ New Bill</Button><div className="today"><span className="live-dot"/>{new Intl.DateTimeFormat('en-IN',{timeZone:'Asia/Kolkata',day:'numeric',month:'short',year:'numeric'}).format(new Date())}</div></header><main>
+ {page==='Dashboard'&&<Dashboard key={revision} onNew={newBill} onOpen={open} onAll={()=>setPage('Bill Book')} onPayments={()=>setPage('Payments')} notify={notify}/>}
+ {page==='New Bill'&&<BillEditor key={`${draftKey}-${editing?.id??'new'}-${duplicate}`} settings={settings} initial={editing} duplicate={duplicate} notify={notify} onSaved={i=>{changed();setSelected(i);setPage('Bill Book');}}/>}
+ {page==='Daily Log'&&<DailyLog key={revision} onOpen={open} onNew={newBill} notify={notify}/>}
+ {page==='Bill Book'&&<BillBook key={`${revision}-${search}`} initialSearch={search} onOpen={open} onNew={newBill} notify={notify}/>}
+ {(page==='Customers'||page==='Services')&&<Masters key={`${page}-${revision}`} kind={page} notify={notify} onOpen={open} onChange={changed}/>}
+ {page==='Payments'&&<Outstanding key={revision} notify={notify} onOpen={open}/>}
+ {page==='Reports'&&<Reports key={revision} notify={notify}/>}
+ {page==='Attendance'&&<Attendance key={revision} notify={notify}/>}
+ {page==='Settings'&&<SettingsPage settings={settings} notify={notify} onChange={changed}/>}
+ {page==='Backup & Restore'&&<BackupPage notify={notify} onChange={changed}/>}
+ </main><footer className="app-footer"><span>GSTIN · {settings.gstin}</span><span>SHRI BILLING <b>1.6.0</b></span></footer></div>{selected&&<InvoiceDetail invoice={selected} notify={notify} onClose={()=>setSelected(undefined)} onChange={i=>{setSelected(i);changed();}} onEdit={(i,copy)=>{setSelected(undefined);setEditing(i);setDuplicate(copy);setDraftKey(v=>v+1);setPage('New Bill');}}/>}{toast&&<div role="status" className={`toast ${toast.error?'error':''}`}>{toast.error?<AlertCircle size={19}/>:<Check size={19}/>}<span>{toast.text}</span></div>}</div>;
+}
+
+
