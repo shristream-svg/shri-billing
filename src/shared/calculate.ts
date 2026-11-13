@@ -1,0 +1,17 @@
+import { printJobValues } from './print-job';
+import Decimal from 'decimal.js';
+import type { LineInput, Line, Totals, DiscountKind } from './model';
+Decimal.set({precision:30,rounding:Decimal.ROUND_HALF_UP});
+export function decimal(value:string,label='Amount'):Decimal { if(!/^\d+(\.\d{1,6})?$/.test(value))throw new Error(`${label} must be a non-negative number with at most 6 decimal places.`);const d=new Decimal(value);if(d.gt(1e10))throw new Error(`${label} is too large.`);return d; }
+export const paise=(value:string)=>{const n=decimal(value).mul(100).toDecimalPlaces(0).toNumber();if(!Number.isSafeInteger(n))throw new Error('Amount is too large.');return n;};
+function discount(base:Decimal,kind:DiscountKind,value:string){const d=decimal(value,'Discount');if(kind==='percent'&&d.gt(100))throw new Error('Percentage discount cannot exceed 100%.');const result=kind==='percent'?base.mul(d).div(100):d.mul(100);if(result.gt(base))throw new Error('Discount exceeds the line or bill value.');return result.toDecimalPlaces(0);}
+export function calculate(items:LineInput[],kind:DiscountKind,value:string,interstate:boolean,roundRupee:boolean):{items:Line[];totals:Totals}{
+ if(!items.length)throw new Error('Add at least one service.');
+ const lines:Line[]=items.map(item=>{if(item.printJob){const job=printJobValues(item.printJob);if(item.quantity!==job.quantity||item.unit!==job.unit)throw new Error('Printing quantity does not match job dimensions. Use Edit printing details.');}if(!item.description.trim())throw new Error('Enter a description for every service.');const qty=decimal(item.quantity,'Quantity');if(qty.lte(0))throw new Error('Quantity must be greater than zero.');const tax=decimal(item.gst,'GST');if(tax.gt(100))throw new Error('GST cannot exceed 100%.');const gross=qty.mul(decimal(item.rate,'Rate')).mul(100).toDecimalPlaces(0);const ld=discount(gross,item.discountKind,item.discount);return {...item,gross:gross.toNumber(),lineDiscount:ld.toNumber(),billDiscount:0,taxable:gross.minus(ld).toNumber(),cgst:0,sgst:0,igst:0,total:0};});
+ const base=lines.reduce((s,l)=>s+l.taxable,0);const bd=discount(new Decimal(base),kind,value).toNumber();
+ if(base>0){const portions=lines.map((l,index)=>{const exact=new Decimal(l.taxable).mul(bd).div(base);return {index,whole:exact.floor().toNumber(),fraction:exact.minus(exact.floor()).toNumber()};});let remainder=bd-portions.reduce((s,p)=>s+p.whole,0);portions.sort((a,b)=>b.fraction-a.fraction||a.index-b.index);for(const p of portions){lines[p.index].billDiscount=p.whole+(remainder-->0?1:0);}}
+ for(const l of lines){l.taxable-=l.billDiscount;const tax=new Decimal(l.taxable).mul(l.gst).div(100);if(interstate)l.igst=tax.toDecimalPlaces(0).toNumber();else l.cgst=l.sgst=tax.div(2).toDecimalPlaces(0).toNumber();l.total=l.taxable+l.cgst+l.sgst+l.igst;}
+ const totals:Totals={gross:0,discount:0,taxable:0,cgst:0,sgst:0,igst:0,roundOff:0,total:0};for(const l of lines){totals.gross+=l.gross;totals.discount+=l.lineDiscount+l.billDiscount;totals.taxable+=l.taxable;totals.cgst+=l.cgst;totals.sgst+=l.sgst;totals.igst+=l.igst;totals.total+=l.total;}
+ if(roundRupee){totals.roundOff=new Decimal(totals.total).div(100).toDecimalPlaces(0).mul(100).minus(totals.total).toNumber();totals.total+=totals.roundOff;}
+ if(!Number.isSafeInteger(totals.total)||totals.total>1e12)throw new Error('Invoice total is too large.');return {items:lines,totals};
+}
